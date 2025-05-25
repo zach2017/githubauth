@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Targeting with TensorFlow.js</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        h1, h2 { color: #333; }
+        .form-container { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .form-container label { display: inline-block; width: 150px; margin: 5px 0; }
+        .form-container input, .form-container select { width: 200px; padding: 5px; margin: 5px 0; }
+        .form-container button { padding: 10px 20px; margin-top: 10px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .form-container button:hover { background-color: #0056b3; }
+        #predictionResult { margin-top: 20px; font-weight: bold; }
+        #predictionResult ul { margin-top: 10px; padding-left: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Customer Targeting Model</h1>
+
+    <h2>Test a New Customer</h2>
+    <div class="form-container">
+        <form id="customerForm">
+            <label for="name">Name:</label>
+            <input type="text" id="name" placeholder="Enter name" required><br>
+            <label for="age">Age:</label>
+            <input type="number" id="age" min="0" placeholder="Enter age" required><br>
+            <label for="totalPurchases">Total Purchases ($):</label>
+            <input type="number" id="totalPurchases" min="0" placeholder="Enter total purchases" required><br>
+            <label for="purchaseFrequency">Purchase Frequency (per year):</label>
+            <input type="number" id="purchaseFrequency" min="0" placeholder="Enter frequency" required><br>
+            <label for="avgPurchase">Average Purchase ($):</label>
+            <input type="number" id="avgPurchase" min="0" placeholder="Enter average purchase" required><br>
+            <label for="income">Income ($):</label>
+            <input type="number" id="income" min="0" placeholder="Enter annual income" required><br>
+            <label for="purchaseType">Purchase Type:</label>
+            <select id="purchaseType" required>
+                <option value="1">Online</option>
+                <option value="0">In-Store</option>
+            </select><br>
+            <label for="distanceFromStore">Distance from Store (miles):</label>
+            <input type="number" id="distanceFromStore" min="0" placeholder="Enter distance" required><br>
+            <button type="submit">Predict</button>
+        </form>
+        <div id="predictionResult"></div>
+    </div>
+
+    <h2>Ranked Customers</h2>
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>Customer ID</th>
+                <th>Name</th>
+                <th>Age</th>
+                <th>Total Purchases ($)</th>
+                <th>Purchase Frequency (per year)</th>
+                <th>Avg Purchase ($)</th>
+                <th>Income ($)</th>
+                <th>Purchase Type</th>
+                <th>Distance from Store (miles)</th>
+                <th>Target Score</th>
+                <th>Rank</th>
+            </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+    </table>
+
+    <script>
+        // Sample sales data with new features
+        const salesData = [
+            { id: 1, name: "Alice Smith", age: 25, totalPurchases: 1500, purchaseFrequency: 12, avgPurchase: 125, income: 40000, purchaseType: 1, distanceFromStore: 5 },
+            { id: 2, name: "Bob Johnson", age: 34, totalPurchases: 3000, purchaseFrequency: 8, avgPurchase: 375, income: 60000, purchaseType: 0, distanceFromStore: 20 },
+            { id: 3, name: "Carol White", age: 45, totalPurchases: 5000, purchaseFrequency: 15, avgPurchase: 333.33, income: 80000, purchaseType: 1, distanceFromStore: 10 },
+            { id: 4, name: "David Brown", age: 28, totalPurchases: 800, purchaseFrequency: 5, avgPurchase: 160, income: 35000, purchaseType: 0, distanceFromStore: 30 },
+            { id: 5, name: "Emma Davis", age: 60, totalPurchases: 7000, purchaseFrequency: 10, avgPurchase: 700, income: 100000, purchaseType: 1, distanceFromStore: 8 },
+            { id: 6, name: "Frank Wilson", age: 19, totalPurchases: 300, purchaseFrequency: 3, avgPurchase: 100, income: 20000, purchaseType: 1, distanceFromStore: 15 },
+            { id: 7, name: "Grace Lee", age: 37, totalPurchases: 4500, purchaseFrequency: 20, avgPurchase: 225, income: 75000, purchaseType: 0, distanceFromStore: 25 },
+            { id: 8, name: "Henry Taylor", age: 50, totalPurchases: 6000, purchaseFrequency: 12, avgPurchase: 500, income: 90000, purchaseType: 1, distanceFromStore: 12 }
+        ];
+
+        // Normalization function
+        function normalize(value, min, max) {
+            return (value - min) / (max - min);
+        }
+
+        // Get min and max for normalization (based on training data)
+        const mins = {
+            age: Math.min(...salesData.map(c => c.age)),
+            totalPurchases: Math.min(...salesData.map(c => c.totalPurchases)),
+            purchaseFrequency: Math.min(...salesData.map(c => c.purchaseFrequency)),
+            avgPurchase: Math.min(...salesData.map(c => c.avgPurchase)),
+            income: Math.min(...salesData.map(c => c.income)),
+            distanceFromStore: Math.min(...salesData.map(c => c.distanceFromStore))
+        };
+        const maxs = {
+            age: Math.max(...salesData.map(c => c.age)),
+            totalPurchases: Math.max(...salesData.map(c => c.totalPurchases)),
+            purchaseFrequency: Math.max(...salesData.map(c => c.purchaseFrequency)),
+            avgPurchase: Math.max(...salesData.map(c => c.avgPurchase)),
+            income: Math.max(...salesData.map(c => c.income)),
+            distanceFromStore: Math.max(...salesData.map(c => c.distanceFromStore))
+        };
+
+        // Prepare features with adjusted frequency
+        const maxDistance = maxs.distanceFromStore;
+        const features = salesData.map(customer => {
+            const adjustedFrequency = customer.purchaseFrequency * (1 - customer.distanceFromStore / maxDistance);
+            return [
+                normalize(customer.age, mins.age, maxs.age),
+                normalize(customer.totalPurchases, mins.totalPurchases, maxs.totalPurchases),
+                normalize(adjustedFrequency, mins.purchaseFrequency, maxs.purchaseFrequency),
+                normalize(customer.avgPurchase, mins.avgPurchase, maxs.avgPurchase),
+                normalize(customer.income, mins.income, maxs.income),
+                customer.purchaseType // Already 0 or 1
+            ];
+        });
+
+        // Synthetic labels for training
+        const labels = salesData.map(customer => {
+            const adjustedFrequency = customer.purchaseFrequency * (1 - customer.distanceFromStore / maxDistance);
+            const score = (customer.totalPurchases / maxs.totalPurchases) * 0.25 +
+                         (adjustedFrequency / maxs.purchaseFrequency) * 0.25 +
+                         (customer.avgPurchase / maxs.avgPurchase) * 0.2 +
+                         (customer.income / maxs.income) * 0.15 +
+                         customer.purchaseType * 0.1 +
+                         (1 - customer.distanceFromStore / maxDistance) * 0.05;
+            return Math.min(Math.max(score, 0), 1);
+        });
+
+        // Convert to tensors
+        const xs = tf.tensor2d(features);
+        const ys = tf.tensor2d(labels, [labels.length, 1]);
+
+        // Define the model
+        const model = tf.sequential();
+        model.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [6] }));
+        model.add(tf.layers.dense({ units: 8, activation: 'relu' }));
+        model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+
+        // Compile the model
+        model.compile({
+            optimizer: 'adam',
+            loss: 'meanSquaredError',
+            metrics: ['accuracy']
+        });
+
+        // Train and display ranked customers
+        async function trainAndDisplay() {
+            // Train the model
+            await model.fit(xs, ys, {
+                epochs: 50,
+                batchSize: 8,
+                verbose: 0
+            });
+
+            // Predict target scores for existing customers
+            const predictions = model.predict(xs);
+            const scores = await predictions.array();
+
+            // Rank customers
+            const rankedCustomers = salesData.map((customer, index) => ({
+                ...customer,
+                targetScore: scores[index][0]
+            })).sort((a, b) => b.targetScore - a.targetScore);
+
+            // Display ranked customers
+            const tbody = document.getElementById('resultsBody');
+            rankedCustomers.forEach((customer, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${customer.id}</td>
+                    <td>${customer.name}</td>
+                    <td>${customer.age}</td>
+                    <td>${customer.totalPurchases.toFixed(2)}</td>
+                    <td>${customer.purchaseFrequency}</td>
+                    <td>${customer.avgPurchase.toFixed(2)}</td>
+                    <td>${customer.income.toFixed(2)}</td>
+                    <td>${customer.purchaseType === 1 ? 'Online' : 'In-Store'}</td>
+                    <td>${customer.distanceFromStore.toFixed(2)}</td>
+                    <td>${(customer.targetScore * 100).toFixed(2)}%</td>
+                    <td>${index + 1}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // Clean up tensors
+            xs.dispose();
+            ys.dispose();
+            predictions.dispose();
+        }
+
+        // Handle form submission for new customer prediction
+        document.getElementById('customerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const age = parseFloat(document.getElementById('age').value);
+            const totalPurchases = parseFloat(document.getElementById('totalPurchases').value);
+            const purchaseFrequency = parseFloat(document.getElementById('purchaseFrequency').value);
+            const avgPurchase = parseFloat(document.getElementById('avgPurchase').value);
+            const income = parseFloat(document.getElementById('income').value);
+            const purchaseType = parseFloat(document.getElementById('purchaseType').value);
+            const distanceFromStore = parseFloat(document.getElementById('distanceFromStore').value);
+
+            // Adjust frequency based on distance
+            const adjustedFrequency = purchaseFrequency * (1 - distanceFromStore / maxDistance);
+
+            // Normalize input features
+            const inputFeatures = [
+                normalize(age, mins.age, maxs.age),
+                normalize(totalPurchases, mins.totalPurchases, maxs.totalPurchases),
+                normalize(adjustedFrequency, mins.purchaseFrequency, maxs.purchaseFrequency),
+                normalize(avgPurchase, mins.avgPurchase, maxs.avgPurchase),
+                normalize(income, mins.income, maxs.income),
+                purchaseType
+            ];
+
+            // Predict target score
+            const inputTensor = tf.tensor2d([inputFeatures]);
+            const prediction = model.predict(inputTensor);
+            const score = (await prediction.array())[0][0];
+            inputTensor.dispose();
+            prediction.dispose();
+
+            // Calculate feature contributions for explanation (based on synthetic label formula)
+            const totalPurchasesContribution = (totalPurchases / maxs.totalPurchases) * 0.25 * 100;
+            const frequencyContribution = (adjustedFrequency / maxs.purchaseFrequency) * 0.25 * 100;
+            const avgPurchaseContribution = (avgPurchase / maxs.avgPurchase) * 0.2 * 100;
+            const incomeContribution = (income / maxs.income) * 0.15 * 100;
+            const purchaseTypeContribution = purchaseType * 0.1 * 100;
+            const distanceContribution = (1 - distanceFromStore / maxDistance) * 0.05 * 100;
+
+            // Generate explanation
+            const explanation = `
+                <p>Predicted Target Score for ${name}: ${(score * 100).toFixed(2)}%</p>
+                <p><strong>Explanation of Score:</strong></p>
+                <ul>
+                    <li><strong>Total Purchases (${totalPurchases.toFixed(2)}):</strong> Contributes ${(totalPurchasesContribution).toFixed(2)}% to the score. Higher total spending increases the score, as it shows strong purchase history.</li>
+                    <li><strong>Purchase Frequency (${purchaseFrequency} per year, adjusted to ${adjustedFrequency.toFixed(2)}):</strong> Contributes ${(frequencyContribution).toFixed(2)}% to the score. Frequency is reduced by distance (${distanceFromStore} miles), as farther customers may shop less often in-store.</li>
+                    <li><strong>Average Purchase (${avgPurchase.toFixed(2)}):</strong> Contributes ${(avgPurchaseContribution).toFixed(2)}% to the score. Larger average purchases suggest higher spending potential.</li>
+                    <li><strong>Income (${income.toFixed(2)}):</strong> Contributes ${(incomeContribution).toFixed(2)}% to the score. Higher income indicates greater purchasing power.</li>
+                    <li><strong>Purchase Type (${purchaseType === 1 ? 'Online' : 'In-Store'}):</strong> Contributes ${(purchaseTypeContribution).toFixed(2)}% to the score. Online shoppers may be prioritized due to ease of targeting.</li>
+                    <li><strong>Distance from Store (${distanceFromStore} miles):</strong> Contributes ${(distanceContribution).toFixed(2)}% to the score. Closer proximity to the store slightly boosts the score, as it may encourage more visits.</li>
+                </ul>
+                <p>The score combines these factors, with the model learning patterns from existing customers. A higher score means the customer is more likely to make future purchases.</p>
+            `;
+
+            // Display prediction result and explanation
+            document.getElementById('predictionResult').innerHTML = explanation;
+        });
+
+        // Run training and display
+        trainAndDisplay();
+    </script>
+</body>
+</html>
