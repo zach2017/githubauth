@@ -1,73 +1,23 @@
 "use client"
 
 import { useSession, signOut } from "next-auth/react"
-import { useState, useEffect } from "react"
 import {
   Container,
   Typography,
   Button,
   Box,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Avatar,
   Chip,
   AppBar,
   Toolbar,
   CircularProgress,
 } from "@mui/material"
-import { GitHub, ExitToApp } from "@mui/icons-material"
+import { GitHub, Email, ExitToApp } from "@mui/icons-material"
 import Link from "next/link"
-
-interface Repository {
-  id: number
-  name: string
-  description: string
-  html_url: string
-  language: string
-  stargazers_count: number
-  forks_count: number
-}
 
 export default function PublicPage() {
   const { data: session, status } = useSession()
-  const [repos, setRepos] = useState<Repository[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (session?.user) {
-      fetchRepos()
-    }
-  }, [session])
-
-  const fetchRepos = async () => {
-    try {
-      const response = await fetch(`https://api.github.com/users/${session?.user?.name}/repos?sort=updated&per_page=10`)
-
-      if (!response.ok) {
-        throw new Error(`GitHub API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      // Ensure data is an array
-      if (Array.isArray(data)) {
-        setRepos(data)
-      } else {
-        console.error("GitHub API did not return an array:", data)
-        setRepos([])
-      }
-    } catch (error) {
-      console.error("Error fetching repos:", error)
-      setRepos([]) // Set empty array on error
-    } finally {
-      setLoading(false)
-    }
-  }
 
   if (status === "loading") {
     return (
@@ -79,13 +29,35 @@ export default function PublicPage() {
     )
   }
 
+  const getProviderIcon = (provider: string) => {
+    switch (provider) {
+      case "github":
+        return <GitHub />
+      case "google":
+        return <Email />
+      default:
+        return <GitHub />
+    }
+  }
+
+  const getProviderName = (provider: string) => {
+    switch (provider) {
+      case "github":
+        return "GitHub"
+      case "google":
+        return "Google"
+      default:
+        return "Unknown"
+    }
+  }
+
   return (
     <>
       <AppBar position="static">
         <Toolbar>
-          <GitHub sx={{ mr: 2 }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            GitHub Dashboard - Public
+          {session?.provider && getProviderIcon(session.provider)}
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, ml: 2 }}>
+            Dashboard - Public
           </Typography>
           <Button color="inherit" component={Link} href="/protected">
             Protected Page
@@ -100,78 +72,49 @@ export default function PublicPage() {
 
       <Container maxWidth="lg" sx={{ mt: 4 }}>
         {session?.user && (
-          <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
-            <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-              <Avatar
-                src={session.user.image || ""}
-                alt={session.user.name || ""}
-                sx={{ width: 80, height: 80, mr: 3 }}
-              />
+          <Paper elevation={3} sx={{ p: 4, textAlign: "center" }}>
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              <Avatar src={session.user.image || ""} alt={session.user.name || ""} sx={{ width: 120, height: 120 }} />
               <Box>
-                <Typography variant="h4" component="h1">
-                  {session.user.name}
+                <Typography variant="h3" component="h1" gutterBottom>
+                  Welcome, {session.user.name}!
                 </Typography>
-                <Typography variant="body1" color="text.secondary">
+                <Typography variant="h6" color="text.secondary" gutterBottom>
                   {session.user.email}
                 </Typography>
+                {session.provider && (
+                  <Chip
+                    icon={getProviderIcon(session.provider)}
+                    label={`Signed in with ${getProviderName(session.provider)}`}
+                    color="primary"
+                    sx={{ mt: 2 }}
+                  />
+                )}
               </Box>
+            </Box>
+
+            <Box sx={{ mt: 4 }}>
+              <Typography variant="h5" gutterBottom>
+                Public Dashboard
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                This is a public page accessible to all authenticated users. Navigate to the protected page for
+                additional features.
+              </Typography>
             </Box>
           </Paper>
         )}
 
-        <Paper elevation={3}>
-          <Box sx={{ p: 3 }}>
-            <Typography variant="h5" component="h2" gutterBottom>
-              Recent Repositories
+        {!session && (
+          <Paper elevation={3} sx={{ p: 4, textAlign: "center" }}>
+            <Typography variant="h5" gutterBottom>
+              Please sign in to view this page
             </Typography>
-            {loading ? (
-              <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-                <CircularProgress />
-              </Box>
-            ) : repos.length > 0 ? (
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Name</TableCell>
-                      <TableCell>Description</TableCell>
-                      <TableCell>Language</TableCell>
-                      <TableCell align="center">Stars</TableCell>
-                      <TableCell align="center">Forks</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {repos.map((repo) => (
-                      <TableRow key={repo.id}>
-                        <TableCell>
-                          <Button
-                            component="a"
-                            href={repo.html_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            variant="text"
-                          >
-                            {repo.name}
-                          </Button>
-                        </TableCell>
-                        <TableCell>{repo.description || "No description"}</TableCell>
-                        <TableCell>{repo.language && <Chip label={repo.language} size="small" />}</TableCell>
-                        <TableCell align="center">{repo.stargazers_count}</TableCell>
-                        <TableCell align="center">{repo.forks_count}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            ) : (
-              <Box sx={{ textAlign: "center", p: 4 }}>
-                <Typography variant="body1" color="text.secondary">
-                  No repositories found.
-                </Typography>
-              </Box>
-            )}
-          </Box>
-        </Paper>
+            <Button variant="contained" component={Link} href="/" sx={{ mt: 2 }}>
+              Go to Login
+            </Button>
+          </Paper>
+        )}
       </Container>
     </>
   )
