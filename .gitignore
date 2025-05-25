@@ -1,1 +1,4 @@
 github-demoapp/.yarn/install-state.gz
+.env
+github-oauth-app/.yarn
+.yarn
